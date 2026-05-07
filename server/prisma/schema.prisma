@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  username  String   @unique
+  password  String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdRooms Room[]            @relation("CreatedRooms")
+  rooms        RoomParticipant[]
+  messages     Message[]
+  events       Event[]
+  eventVotes   EventParticipant[]
+}
+
+model Room {
+  id         String   @id @default(uuid())
+  name       String
+  isPrivate  Boolean  @default(false)
+  password   String?
+  inviteCode String   @unique
+  videoUrl   String?
+  videoTime  Float    @default(0)
+  isPlaying  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  creatorId    String
+  creator      User              @relation("CreatedRooms", fields: [creatorId], references: [id])
+  participants RoomParticipant[]
+  messages     Message[]
+  events       Event[]
+}
+
+model RoomParticipant {
+  id       String   @id @default(uuid())
+  role     String   @default("VIEWER")
+  joinedAt DateTime @default(now())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  @@unique([userId, roomId])
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  text      String
+  createdAt DateTime @default(now())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  videoUrl    String
+  scheduledAt DateTime
+  reminder1h  Boolean  @default(true)
+  reminder15m Boolean  @default(true)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  creatorId String
+  creator   User   @relation(fields: [creatorId], references: [id])
+  roomId    String
+  room      Room   @relation(fields: [roomId], references: [id])
+  participants EventParticipant[]
+}
+
+model EventParticipant {
+  id       String   @id @default(uuid())
+  status   String   @default("PENDING")
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([eventId, userId])
+}
