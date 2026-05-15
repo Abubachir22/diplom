@@ -26,7 +26,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     });
     if (existing) {
       res.status(409).json({
-        error: existing.email === data.email ? 'Email СѓР¶Рµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ' : 'РРјСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ Р·Р°РЅСЏС‚Рѕ',
+        error: existing.email === data.email ? 'Email already in use' : 'Username is taken',
       });
       return;
     }
@@ -39,7 +39,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
       user: { id: user.id, username: user.username, email: user.email, avatarUrl: user.avatarUrl },
     });
   } catch (e) {
-    if (e instanceof z.ZodError) { res.status(400).json({ error: 'РќРµРІРµСЂРЅС‹Рµ РґР°РЅРЅС‹Рµ', details: e.errors }); return; }
+    if (e instanceof z.ZodError) { res.status(400).json({ error: 'Invalid data', details: e.errors }); return; }
     next(e);
   }
 });
@@ -49,7 +49,7 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     const data = loginSchema.parse(req.body);
     const user = await prisma.user.findUnique({ where: { email: data.email } });
     if (!user || !(await comparePassword(data.password, user.password))) {
-      res.status(401).json({ error: 'РќРµРІРµСЂРЅС‹Р№ email РёР»Рё РїР°СЂРѕР»СЊ' });
+      res.status(401).json({ error: 'Invalid email or password' });
       return;
     }
     const token = signToken({ userId: user.id, username: user.username, email: user.email });
@@ -58,7 +58,7 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
       user: { id: user.id, username: user.username, email: user.email, avatarUrl: user.avatarUrl },
     });
   } catch (e) {
-    if (e instanceof z.ZodError) { res.status(400).json({ error: 'РќРµРІРµСЂРЅС‹Рµ РґР°РЅРЅС‹Рµ' }); return; }
+    if (e instanceof z.ZodError) { res.status(400).json({ error: 'Invalid data' }); return; }
     next(e);
   }
 });
@@ -69,7 +69,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response, next: Next
       where: { id: req.user!.userId },
       select: { id: true, username: true, email: true, avatarUrl: true, createdAt: true },
     });
-    if (!user) { res.status(404).json({ error: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ' }); return; }
+    if (!user) { res.status(404).json({ error: 'User not found' }); return; }
     res.json({ user });
   } catch (e) { next(e); }
 });

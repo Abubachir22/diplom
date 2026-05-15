@@ -4,6 +4,7 @@ import GlassCard from "../components/ui/GlassCard";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import Input from "../components/ui/Input";
+import { useTranslation } from "../i18n/LanguageContext";
 
 interface RoomItem {
   id: string;
@@ -22,6 +23,7 @@ const RoomsPage = () => {
   const [rooms, setRooms] = useState<RoomItem[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   useEffect(() => {
     fetch("http://localhost:5000/api/rooms")
@@ -59,55 +61,56 @@ const RoomsPage = () => {
     <div className="container" style={{ paddingTop: "40px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "30px", flexWrap: "wrap", gap: "16px" }}>
         <div style={{ display: "flex", gap: "24px" }}>
-          {(["active", "planned"] as const).map((t) => (
-            <button key={t} onClick={() => setTab(t)} style={{ background: "none", border: "none", color: tab === t ? "#fff" : "var(--text-dim)", fontSize: "1.1rem", cursor: "pointer", paddingBottom: "6px", borderBottom: tab === t ? "2px solid var(--accent-purple)" : "2px solid transparent" }}>
-              {/* {t === "active" ? "Active Rooms" : "Planned"} */}
+          {(["active", "planned"] as const).map((tb) => (
+            <button key={tb} onClick={() => setTab(tb)} style={{ background: "none", border: "none", color: tab === tb ? "#fff" : "var(--text-dim)", fontSize: "1.1rem", cursor: "pointer", paddingBottom: "6px", borderBottom: tab === tb ? "2px solid var(--accent-purple)" : "2px solid transparent" }}>
+              {tb === "active" ? t('rooms.active') : t('rooms.planned')}
             </button>
           ))}
         </div>
         <div style={{ display: "flex", gap: "10px" }}>
-          {/* <Button variant="outline" size="sm" onClick={() => setShowPlan(true)}>+ Plan</Button> */}
-          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>+ Create Room</Button>
+          <Button variant="outline" size="sm" onClick={() => setShowPlan(true)}>{t('rooms.plan')}</Button>
+          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>{t('rooms.create')}</Button>
         </div>
       </div>
 
       {loading ? <p style={{ color: "var(--text-dim)", textAlign: "center", padding: "60px 0" }}>Loading...</p>
       : tab === "active" ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "20px" }}>
+          {rooms.length === 0 && <p style={{ color: "var(--text-dim)", gridColumn: "1 / -1", textAlign: "center", padding: "40px" }}>{t('rooms.noRooms')}</p>}
           {rooms.map((room) => (
             <GlassCard key={room.id} style={{ padding: "24px" }}>
               <span style={{ fontSize: "0.8rem", color: room.isPrivate ? "var(--accent-purple)" : "var(--accent-green)" }}>
-                {room.isPrivate ? "Private" : room.viewers + " watching"}
+                {room.isPrivate ? t('rooms.private') : `${room.viewers} ${t('rooms.viewers')}`}
               </span>
               <h3 style={{ margin: "10px 0" }}>{room.name}</h3>
-              <p style={{ color: "var(--text-dim)", fontSize: "0.9rem", marginBottom: "16px" }}>Host: {room.host}</p>
-              <Button variant="outline" onClick={() => navigate("/room/" + room.inviteCode)} style={{ width: "100%" }}>Join</Button>
+              <p style={{ color: "var(--text-dim)", fontSize: "0.9rem", marginBottom: "16px" }}>{t('rooms.host')} {room.host}</p>
+              <Button variant="outline" onClick={() => navigate("/room/" + room.inviteCode)} style={{ width: "100%" }}>{t('rooms.join')}</Button>
             </GlassCard>
           ))}
         </div>
-      ) : <p style={{ color: "var(--text-dim)", textAlign: "center", padding: "60px" }}>No planned events yet</p>}
+      ) : <p style={{ color: "var(--text-dim)", textAlign: "center", padding: "60px" }}>{t('rooms.noPlanned')}</p>}
 
-      <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Create Room">
+      <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title={t('rooms.createModal.title')}>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <Input label="Room Name" value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder="Friday Movie Night" />
+          <Input label={t('rooms.createModal.name')} value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder={t('rooms.createModal.namePlaceholder')} />
           <div style={{ display: "flex", gap: "10px" }}>
-            <Button variant="outline" onClick={() => setShowCreate(false)} style={{ flex: 1 }}>Cancel</Button>
-            <Button variant="primary" onClick={handleCreate} style={{ flex: 2 }}>Create</Button>
+            <Button variant="outline" onClick={() => setShowCreate(false)} style={{ flex: 1 }}>{t('rooms.createModal.cancel')}</Button>
+            <Button variant="primary" onClick={handleCreate} style={{ flex: 2 }}>{t('rooms.createModal.submit')}</Button>
           </div>
         </div>
       </Modal>
 
-      <Modal isOpen={showPlan} onClose={() => setShowPlan(false)} title="Schedule Event">
+      <Modal isOpen={showPlan} onClose={() => setShowPlan(false)} title={t('rooms.planModal.title')}>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <Input label="Event Name" placeholder="Season Finale" />
+          <Input label={t('rooms.planModal.name')} placeholder={t('rooms.planModal.namePlaceholder')} />
           <div style={{ display: "flex", gap: "10px" }}>
-            <Input label="Date" type="date" />
-            <Input label="Time" type="time" />
+            <Input label={t('rooms.planModal.date')} type="date" />
+            <Input label={t('rooms.planModal.time')} type="time" />
           </div>
-          <Input label="Video Link" placeholder="https://..." />
+          <Input label={t('rooms.planModal.url')} placeholder="https://..." />
           <div style={{ display: "flex", gap: "10px" }}>
-            <Button variant="outline" onClick={() => setShowPlan(false)} style={{ flex: 1 }}>Cancel</Button>
-            <Button variant="primary" onClick={() => setShowPlan(false)} style={{ flex: 2 }}>Create Event</Button>
+            <Button variant="outline" onClick={() => setShowPlan(false)} style={{ flex: 1 }}>{t('rooms.planModal.cancel')}</Button>
+            <Button variant="primary" onClick={() => setShowPlan(false)} style={{ flex: 2 }}>{t('rooms.planModal.submit')}</Button>
           </div>
         </div>
       </Modal>
