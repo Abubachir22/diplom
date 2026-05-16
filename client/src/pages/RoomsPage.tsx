@@ -5,6 +5,7 @@ import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import Input from "../components/ui/Input";
 import { useTranslation } from "../i18n/LanguageContext";
+import JoinRoomModal from "../components/room/JoinRoomModal";
 
 interface RoomItem {
   id: string;
@@ -15,6 +16,15 @@ interface RoomItem {
   isPrivate?: boolean;
 }
 
+const getGuestId = () => {
+  let id = sessionStorage.getItem("guestId");
+  if (!id) {
+    id = "guest_" + Math.random().toString(36).slice(2, 10);
+    sessionStorage.setItem("guestId", id);
+  }
+  return id;
+};
+
 const RoomsPage = () => {
   const [tab, setTab] = useState<"active"|"planned">("active");
   const [showCreate, setShowCreate] = useState(false);
@@ -24,6 +34,19 @@ const RoomsPage = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const [joinModal, setJoinModal] = useState(false);
+  const [joinRoomData, setJoinRoomData] = useState<{ code: string; isPrivate: boolean } | null>(null);
+
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [roomPassword, setRoomPassword] = useState("");
+
+  const [planTitle, setPlanTitle] = useState("");
+  const [planDate, setPlanDate] = useState("");
+  const [planTime, setPlanTime] = useState("");
+  const [planUrl, setPlanUrl] = useState("");
+
+  const token = localStorage.getItem("token");
+  const guestId = getGuestId();
 
   useEffect(() => {
     fetch("http://localhost:5000/api/rooms")
@@ -39,21 +62,87 @@ const RoomsPage = () => {
   }, []);
 
   const handleCreate = async () => {
-    const token = localStorage.getItem("token");
+    if (!token) {
+      alert(t('rooms.createModal.guestError'));
+      setShowCreate(false);
+      return;
+    }
     try {
       const res = await fetch("http://localhost:5000/api/rooms", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
-        body: JSON.stringify({ name: roomName || "New Room", isPrivate: false }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: roomName || "New Room",
+          isPrivate: isPrivate,
+          password: isPrivate ? roomPassword : undefined,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
         setShowCreate(false);
+        setRoomName("");
+        setIsPrivate(false);
+        setRoomPassword("");
         navigate("/room/" + data.room.inviteCode);
       }
     } catch {
       setShowCreate(false);
       navigate("/room/room-" + Date.now());
+    }
+  };
+
+  const handleJoinRoom = async (code: string, password?: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/rooms/${code}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, guestId: !token ? guestId : undefined }),
+      });
+      if (res.ok) {
+        setJoinModal(false);
+        navigate(`/room/${code}`);
+      } else {
+        const data = await res.json();
+        if (res.status === 403 && data.error === 'You are banned from this room') {
+          alert(t('room.banned'));
+        } else {
+          alert(data.error || 'Cannot join room');
+        }
+      }
+    } catch {
+      alert(t('error.network'));
+    }
+  };
+
+  const handlePlanSubmit = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert(t('rooms.planModal.guestError') || 'Только зарегистрированные пользователи могут планировать события');
+      return;
+    }
+    try {
+      const res = await fetch('http://localhost:5000/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: planTitle || 'Untitled Event',
+          videoUrl: planUrl || '',
+          scheduledAt: new Date(`${planDate}T${planTime}`).toISOString(),
+        }),
+      });
+      if (res.ok) {
+        setShowPlan(false);
+        setPlanTitle("");
+        setPlanDate("");
+        setPlanTime("");
+        setPlanUrl("");
+        setTab('planned');
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Ошибка при создании события');
+      }
+    } catch {
+      alert(t('error.network'));
     }
   };
 
@@ -84,7 +173,14 @@ const RoomsPage = () => {
               </span>
               <h3 style={{ margin: "10px 0" }}>{room.name}</h3>
               <p style={{ color: "var(--text-dim)", fontSize: "0.9rem", marginBottom: "16px" }}>{t('rooms.host')} {room.host}</p>
-              <Button variant="outline" onClick={() => navigate("/room/" + room.inviteCode)} style={{ width: "100%" }}>{t('rooms.join')}</Button>
+              <Button variant="outline" onClick={() => {
+                if (room.isPrivate) {
+                  setJoinRoomData({ code: room.inviteCode, isPrivate: true });
+                  setJoinModal(true);
+                } else {
+                  handleJoinRoom(room.inviteCode);
+                }
+              }} style={{ width: "100%" }}>{t('rooms.join')}</Button>
             </GlassCard>
           ))}
         </div>
@@ -93,6 +189,13 @@ const RoomsPage = () => {
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title={t('rooms.createModal.title')}>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <Input label={t('rooms.createModal.name')} value={roomName} onChange={(e) => setRoomName(e.target.value)} placeholder={t('rooms.createModal.namePlaceholder')} />
+          <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", fontSize: "0.9rem" }}>
+            <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} style={{ accentColor: "var(--accent-purple)" }} />
+            {t('rooms.createModal.private')}
+          </label>
+          {isPrivate && (
+            <Input label={t('rooms.createModal.password')} type="password" value={roomPassword} onChange={(e) => setRoomPassword(e.target.value)} placeholder="Минимум 4 символа" />
+          )}
           <div style={{ display: "flex", gap: "10px" }}>
             <Button variant="outline" onClick={() => setShowCreate(false)} style={{ flex: 1 }}>{t('rooms.createModal.cancel')}</Button>
             <Button variant="primary" onClick={handleCreate} style={{ flex: 2 }}>{t('rooms.createModal.submit')}</Button>
@@ -102,18 +205,29 @@ const RoomsPage = () => {
 
       <Modal isOpen={showPlan} onClose={() => setShowPlan(false)} title={t('rooms.planModal.title')}>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <Input label={t('rooms.planModal.name')} placeholder={t('rooms.planModal.namePlaceholder')} />
+          <Input label={t('rooms.planModal.name')} value={planTitle} onChange={(e) => setPlanTitle(e.target.value)} placeholder={t('rooms.planModal.namePlaceholder')} />
           <div style={{ display: "flex", gap: "10px" }}>
-            <Input label={t('rooms.planModal.date')} type="date" />
-            <Input label={t('rooms.planModal.time')} type="time" />
+            <Input label={t('rooms.planModal.date')} type="date" value={planDate} onChange={(e) => setPlanDate(e.target.value)} />
+            <Input label={t('rooms.planModal.time')} type="time" value={planTime} onChange={(e) => setPlanTime(e.target.value)} />
           </div>
-          <Input label={t('rooms.planModal.url')} placeholder="https://..." />
+          <Input label={t('rooms.planModal.url')} value={planUrl} onChange={(e) => setPlanUrl(e.target.value)} placeholder="https://..." />
           <div style={{ display: "flex", gap: "10px" }}>
             <Button variant="outline" onClick={() => setShowPlan(false)} style={{ flex: 1 }}>{t('rooms.planModal.cancel')}</Button>
-            <Button variant="primary" onClick={() => setShowPlan(false)} style={{ flex: 2 }}>{t('rooms.planModal.submit')}</Button>
+            <Button variant="primary" onClick={handlePlanSubmit} style={{ flex: 2 }}>{t('rooms.planModal.submit')}</Button>
           </div>
         </div>
       </Modal>
+
+      <JoinRoomModal
+        isOpen={joinModal}
+        onClose={() => setJoinModal(false)}
+        onJoin={(password) => {
+          if (joinRoomData) {
+            handleJoinRoom(joinRoomData.code, password);
+          }
+        }}
+        isPrivate={joinRoomData?.isPrivate || false}
+      />
     </div>
   );
 };

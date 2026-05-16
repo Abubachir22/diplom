@@ -16,23 +16,27 @@ const RoomPage = () => {
   const { t } = useTranslation();
 
   const userStr = localStorage.getItem("user");
+  const getGuestId = () => {
+    let id = sessionStorage.getItem("guestId");
+    if (!id) {
+      id = "guest_" + Math.random().toString(36).slice(2, 10);
+      sessionStorage.setItem("guestId", id);
+    }
+    return id;
+  };
+  const guestId = getGuestId();
+
   const currentUser = useRef({
     id: userStr ? JSON.parse(userStr).id : "guest_" + Math.random().toString(36).slice(2, 8),
     username: userStr ? JSON.parse(userStr).username : "Guest_" + Math.random().toString(36).slice(2, 6),
   });
+  const isOwner = useRef(false);
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [playerReady, setPlayerReady] = useState(false);
-  const [participants, setParticipants] = useState<RoomParticipant[]>([
-    {
-      id: currentUser.current.id,
-      role: "OWNER",
-      joinedAt: new Date().toISOString(),
-      user: { id: currentUser.current.id, username: currentUser.current.username, email: "" },
-    },
-  ]);
+  const [participants, setParticipants] = useState<RoomParticipant[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const hasJoined = useRef(false);
   const pendingState = useRef<any>(null);
@@ -55,8 +59,17 @@ const RoomPage = () => {
   useEffect(() => {
     if (!roomId || !connected || hasJoined.current) return;
     hasJoined.current = true;
-    joinRoom(roomId, currentUser.current.username);
+    joinRoom(roomId, currentUser.current.username, !userStr ? guestId : undefined);
     emit("sync:request-state", roomId);
+    setMessages((prev) => [...prev, {
+      id: "sys-welcome",
+      text: "Welcome to the room!",
+      userId: "system",
+      username: "System",
+      roomId,
+      createdAt: new Date().toISOString(),
+      isSystem: true,
+    }]);
     return () => {
       hasJoined.current = false;
       leaveRoom(roomId);
@@ -66,39 +79,64 @@ const RoomPage = () => {
   useEffect(() => {
     if (!socket || !roomId) return;
     const cleanups: (() => void)[] = [];
+
     cleanups.push(
       on("user:joined", (data: any) => {
-        setParticipants((prev) => {
-          if (prev.find((p) => p.user.id === data.id)) return prev;
-          return [...prev, { id: data.id, role: data.role || "VIEWER", joinedAt: data.joinedAt, user: { id: data.id, username: data.username, email: "" } }];
-        });
-        setMessages((prev) => [...prev, { id: "sys-" + Date.now(), text: data.username + " joined", userId: "system", username: "System", roomId, createdAt: new Date().toISOString(), isSystem: true }]);
+        setMessages((prev) => [...prev, {
+          id: "sys-" + Date.now(),
+          text: data.username + " joined",
+          userId: "system",
+          username: "System",
+          roomId,
+          createdAt: new Date().toISOString(),
+          isSystem: true,
+        }]);
       }),
-      on("user:left", (userId: any) => setParticipants((prev) => prev.filter((p) => p.user.id !== userId))),
+
+      on("user:left", (userId: any) => {
+        setParticipants((prev) => prev.filter((p) => p.user.id !== userId));
+      }),
+
+      on("kicked", () => {
+        alert(t('room.banned'));
+        navigate('/rooms');
+      }),
+
       on("sync:play", (data: any) => { setCurrentTime(data.time); setIsPlaying(true); }),
       on("sync:pause", (data: any) => { setCurrentTime(data.time); setIsPlaying(false); }),
       on("sync:seek", (data: any) => { setCurrentTime(data.time); }),
       on("sync:change-video", (data: any) => { setVideoUrl(data.videoUrl); setCurrentTime(0); setIsPlaying(false); setPlayerReady(false); }),
+
       on("sync:state-update", (data: any) => {
         pendingState.current = data;
         if (data.videoUrl) setVideoUrl(data.videoUrl);
         if (playerReady) applyPendingState();
       }),
+
       on("sync:request-state", (requesterId: any) => {
-        emit("sync:state-response", { requesterId, videoUrl: videoUrlRef.current, time: currentTimeRef.current, isPlaying: isPlayingRef.current });
-      }),
-      on("chat:message", (data: any) => setMessages((prev) => (prev.find((m) => m.id === data.id) ? prev : [...prev, data]))),
-      on("room:users", (data: any) => {
-        const myId = currentUser.current.id;
-        const newUsers = data.filter((u: any) => u.userId !== myId).map((u: any) => ({ id: u.userId, role: u.role || "VIEWER", joinedAt: new Date().toISOString(), user: { id: u.userId, username: u.username, email: "" } }));
-        setParticipants((prev) => {
-          const mine = prev.filter((p) => p.user.id === myId);
-          const merged = [...mine];
-          newUsers.forEach((u: any) => { if (!merged.find((m) => m.user.id === u.user.id)) merged.push(u); });
-          return merged;
+        emit("sync:state-response", {
+          requesterId,
+          videoUrl: videoUrlRef.current,
+          time: currentTimeRef.current,
+          isPlaying: isPlayingRef.current,
         });
-      })
+      }),
+
+      on("chat:message", (data: any) => {
+        setMessages((prev) => (prev.find((m) => m.id === data.id) ? prev : [...prev, data]));
+      }),
+
+      on("room:users", (data: any) => {
+        const mapped: RoomParticipant[] = data.map((u: any) => ({
+          id: u.userId,
+          role: u.role || "VIEWER",
+          joinedAt: new Date().toISOString(),
+          user: { id: u.userId, username: u.username, email: "" },
+        }));
+        setParticipants(mapped);
+      }),
     );
+
     return () => cleanups.forEach((c) => c());
   }, [socket, roomId, playerReady, applyPendingState]);
 
@@ -111,6 +149,20 @@ const RoomPage = () => {
     setMessages((prev) => [...prev, { id: "sys-" + Date.now(), text: "Video changed", userId: "system", username: "System", roomId: roomId || "", createdAt: new Date().toISOString(), isSystem: true }]);
   }, [roomId, emit]);
   const handleSend = useCallback((text: string) => { emit("chat:send", { roomId, text, userId: currentUser.current.id, username: currentUser.current.username }); }, [roomId, emit]);
+
+  const handleBan = async (userId: string) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const res = await fetch(`http://localhost:5000/api/rooms/${roomId}/ban`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId }),
+    });
+    if (res.ok) {
+      setParticipants(prev => prev.filter(p => p.user.id !== userId));
+    }
+  };
+
   const handleTimeUpdate = useCallback((t: number) => { currentTimeRef.current = t; }, []);
   const handlePlayerReady = useCallback(() => { setPlayerReady(true); applyPendingState(); }, [applyPendingState]);
 
@@ -123,7 +175,7 @@ const RoomPage = () => {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <span style={{ fontSize: "0.85rem", color: "var(--accent-green)", fontWeight: 600 }}>{currentUser.current.username}</span>
-          {participants.find(p => p.user.id === currentUser.current.id && p.role === 'OWNER') && (
+          {isOwner.current && (
             <button className="btn btn-outline btn-sm" style={{ color: '#EF4444', borderColor: '#EF4444' }} onClick={async () => {
               if (!window.confirm(t('room.deleteConfirm'))) return;
               const token = localStorage.getItem('token');
@@ -137,7 +189,12 @@ const RoomPage = () => {
       </div>
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "220px 1fr 320px", gap: "16px", padding: "16px", overflow: "hidden", minHeight: 0 }}>
         <GlassCard style={{ overflowY: "auto", padding: 0 }}>
-          <ParticipantList participants={participants} currentUserId={currentUser.current.id} />
+          <ParticipantList
+            participants={participants}
+            currentUserId={currentUser.current.id}
+            isOwner={isOwner.current}
+            onBan={handleBan}
+          />
         </GlassCard>
         <VideoPlayer videoUrl={videoUrl} isPlaying={isPlaying} currentTime={currentTime} onPlay={handlePlay} onPause={handlePause} onSeek={handleSeek} onVideoChange={handleVideoChange} onTimeUpdate={handleTimeUpdate} onReady={handlePlayerReady} />
         <GlassCard style={{ overflow: "hidden", padding: 0, display: "flex", flexDirection: "column" }}>

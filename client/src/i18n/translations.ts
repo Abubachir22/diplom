@@ -45,6 +45,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'auth.register.login': 'Войти',
 
     // Rooms
+    'rooms.planModal.guestError': 'Только зарегистрированные пользователи могут планировать события',
     'rooms.active': 'Активные комнаты',
     'rooms.planned': 'Запланированные',
     'rooms.create': '+ Создать комнату',
@@ -70,8 +71,10 @@ export const translations: Record<Language, Record<string, string>> = {
     'rooms.planModal.url': 'Ссылка на видео (VK / YouTube / Rutube)',
     'rooms.planModal.cancel': 'Отмена',
     'rooms.planModal.submit': 'Создать событие',
+    'rooms.createModal.guestError': 'Гости не могут создавать комнаты. Зарегистрируйтесь или войдите.',
 
     // Room
+    'room.banned': 'Вы забанены в этой комнате',
     'room.back': 'Назад',
     'room.title': 'Комната просмотра',
     'room.connected': 'Подключено',
@@ -105,6 +108,9 @@ export const translations: Record<Language, Record<string, string>> = {
   },
 
   en: {
+    'rooms.planModal.guestError': 'Only registered users can schedule events',
+    'room.banned': 'You are banned from this room',
+    'rooms.createModal.guestError': 'Guests cannot create rooms. Please register or login.',
     'nav.rooms': 'Rooms',
     'nav.login': 'Login',
     'nav.signup': 'Sign Up',

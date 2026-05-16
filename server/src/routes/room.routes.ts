@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../services/prisma';
 import { authMiddleware, optionalAuth } from '../middleware/auth.middleware';
-import { hashPassword } from '../utils/password';
+import { hashPassword, comparePassword } from '../utils/password';
+import { getActiveUsers } from '../socket/room.handler';
 
 const router = Router();
 
@@ -38,7 +39,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response, next: NextF
     });
     res.status(201).json({ room });
   } catch (e) {
-    if (e instanceof z.ZodError) { res.status(400).json({ error: 'РќРµРІРµСЂРЅС‹Рµ РґР°РЅРЅС‹Рµ', details: e.errors }); return; }
+    if (e instanceof z.ZodError) { res.status(400).json({ error: 'Invalid data', details: e.errors }); return; }
     next(e);
   }
 });
@@ -46,7 +47,6 @@ router.post('/', authMiddleware, async (req: Request, res: Response, next: NextF
 router.get('/', optionalAuth, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const rooms = await prisma.room.findMany({
-      where: { isPrivate: false },
       include: {
         _count: { select: { participants: true } },
         creator: { select: { id: true, username: true } },
@@ -59,6 +59,7 @@ router.get('/', optionalAuth, async (_req: Request, res: Response, next: NextFun
       name: r.name,
       inviteCode: r.inviteCode,
       videoUrl: r.videoUrl,
+      isPrivate: r.isPrivate,
       viewers: r._count.participants,
       host: r.creator.username,
       createdAt: r.createdAt,
@@ -78,36 +79,88 @@ router.get('/:inviteCode', optionalAuth, async (req: Request, res: Response, nex
         creator: { select: { id: true, username: true } },
       },
     });
-    if (!room) { res.status(404).json({ error: 'РљРѕРјРЅР°С‚Р° РЅРµ РЅР°Р№РґРµРЅР°' }); return; }
+    if (!room) { res.status(404).json({ error: 'Room not found' }); return; }
     res.json({ room });
   } catch (e) { next(e); }
 });
 
-// удаление комнаты
-router.delete('/:inviteCode', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:inviteCode/join', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const room = await prisma.room.findUnique({
       where: { inviteCode: req.params.inviteCode },
+      include: { participants: true },
     });
+    if (!room) { res.status(404).json({ error: 'Room not found' }); return; }
 
-    if (!room) {
-      res.status(404).json({ error: 'Комната не найдена' });
-      return;
+    const userId = req.user?.userId || req.body.guestId || `guest_${req.ip}`;
+
+    const banned = await prisma.ban.findUnique({
+      where: { roomId_userId: { roomId: room.id, userId } },
+    });
+    if (banned) { res.status(403).json({ error: 'You are banned from this room' }); return; }
+
+    if (room.isPrivate && room.password) {
+      const { password } = req.body;
+      if (!password) { res.status(403).json({ error: 'Password required' }); return; }
+      const valid = await comparePassword(password, room.password);
+      if (!valid) { res.status(403).json({ error: 'Wrong password' }); return; }
     }
 
-    if (room.creatorId !== req.user!.userId) {
-      res.status(403).json({ error: 'Только создатель может удалить комнату' });
-      return;
+    if (req.user) {
+      const existing = await prisma.roomParticipant.findUnique({
+        where: { userId_roomId: { userId: req.user.userId, roomId: room.id } },
+      });
+      if (!existing) {
+        await prisma.roomParticipant.create({
+          data: { userId: req.user.userId, roomId: room.id, role: 'VIEWER' },
+        });
+      }
     }
-
-    await prisma.room.delete({
-      where: { inviteCode: req.params.inviteCode },
-    });
 
     res.json({ success: true });
-  } catch (e) {
-    next(e);
-  }
+  } catch (e) { next(e); }
+});
+
+router.post('/:inviteCode/ban', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const room = await prisma.room.findUnique({ where: { inviteCode: req.params.inviteCode } });
+    if (!room) { res.status(404).json({ error: 'Room not found' }); return; }
+    if (room.creatorId !== req.user!.userId) { res.status(403).json({ error: 'Only owner can ban' }); return; }
+
+    const { userId } = req.body;
+    if (!userId) { res.status(400).json({ error: 'userId is required' }); return; }
+
+    await prisma.ban.create({ data: { roomId: room.id, userId } });
+    await prisma.roomParticipant.deleteMany({ where: { roomId: room.id, userId } });
+
+    // Выгоняем из сокет-комнаты
+    try {
+      const activeUsers = getActiveUsers();
+      const io = req.app.get('io');
+      if (io) {
+        const sockets = await io.in(req.params.inviteCode).fetchSockets();
+        for (const s of sockets) {
+          const user = activeUsers.get(s.id);
+          if (user && user.userId === userId) {
+            s.leave(req.params.inviteCode);
+            s.emit('kicked', { reason: 'You have been banned' });
+          }
+        }
+      }
+    } catch {}
+
+    res.json({ success: true });
+  } catch (e) { next(e); }
+});
+
+router.delete('/:inviteCode', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const room = await prisma.room.findUnique({ where: { inviteCode: req.params.inviteCode } });
+    if (!room) { res.status(404).json({ error: 'Room not found' }); return; }
+    if (room.creatorId !== req.user!.userId) { res.status(403).json({ error: 'Only creator can delete' }); return; }
+    await prisma.room.delete({ where: { inviteCode: req.params.inviteCode } });
+    res.json({ success: true });
+  } catch (e) { next(e); }
 });
 
 export default router;

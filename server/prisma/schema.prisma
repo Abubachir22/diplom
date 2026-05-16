@@ -16,7 +16,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  createdRooms Room[]            @relation("CreatedRooms")
+  createdRooms Room[]              @relation("CreatedRooms")
   rooms        RoomParticipant[]
   messages     Message[]
   events       Event[]
@@ -40,16 +40,19 @@ model Room {
   participants RoomParticipant[]
   messages     Message[]
   events       Event[]
+  bans         Ban[]
 }
 
 model RoomParticipant {
   id       String   @id @default(uuid())
   role     String   @default("VIEWER")
   joinedAt DateTime @default(now())
+
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   roomId String
   room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
   @@unique([userId, roomId])
 }
 
@@ -57,6 +60,7 @@ model Message {
   id        String   @id @default(uuid())
   text      String
   createdAt DateTime @default(now())
+
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   roomId String
@@ -73,6 +77,7 @@ model Event {
   reminder15m Boolean  @default(true)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
+
   creatorId String
   creator   User   @relation(fields: [creatorId], references: [id])
   roomId    String
@@ -83,9 +88,21 @@ model Event {
 model EventParticipant {
   id       String   @id @default(uuid())
   status   String   @default("PENDING")
+
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
   userId  String
   user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([eventId, userId])
+}
+
+model Ban {
+  id        String   @id @default(uuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@unique([roomId, userId])
 }

@@ -37,9 +37,9 @@ export const useSocket = (token?: string) => {
     };
   }, []);
 
-  const joinRoom = useCallback((roomId: string, username?: string) => {
-    console.log("[SOCKET] Emitting room:join", roomId, username);
-    socketRef.current?.emit("room:join", { roomId, username });
+  const joinRoom = useCallback((roomId: string, username?: string, guestId?: string) => {
+    console.log("[SOCKET] Emitting room:join", roomId, username, guestId);
+    socketRef.current?.emit("room:join", { roomId, username, guestId });
   }, []);
 
   const leaveRoom = useCallback((roomId: string) => {
