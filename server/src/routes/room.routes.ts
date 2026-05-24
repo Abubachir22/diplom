@@ -47,6 +47,9 @@ router.post('/', authMiddleware, async (req: Request, res: Response, next: NextF
 router.get('/', optionalAuth, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const rooms = await prisma.room.findMany({
+      where: {
+        events: { none: {} },
+      },
       include: {
         _count: { select: { participants: true } },
         creator: { select: { id: true, username: true } },
@@ -133,7 +136,6 @@ router.post('/:inviteCode/ban', authMiddleware, async (req: Request, res: Respon
     await prisma.ban.create({ data: { roomId: room.id, userId } });
     await prisma.roomParticipant.deleteMany({ where: { roomId: room.id, userId } });
 
-    // Выгоняем из сокет-комнаты
     try {
       const activeUsers = getActiveUsers();
       const io = req.app.get('io');
@@ -158,7 +160,13 @@ router.delete('/:inviteCode', authMiddleware, async (req: Request, res: Response
     const room = await prisma.room.findUnique({ where: { inviteCode: req.params.inviteCode } });
     if (!room) { res.status(404).json({ error: 'Room not found' }); return; }
     if (room.creatorId !== req.user!.userId) { res.status(403).json({ error: 'Only creator can delete' }); return; }
+
+    await prisma.event.deleteMany({ where: { roomId: room.id } });
+    await prisma.ban.deleteMany({ where: { roomId: room.id } });
+    await prisma.message.deleteMany({ where: { roomId: room.id } });
+    await prisma.roomParticipant.deleteMany({ where: { roomId: room.id } });
     await prisma.room.delete({ where: { inviteCode: req.params.inviteCode } });
+
     res.json({ success: true });
   } catch (e) { next(e); }
 });

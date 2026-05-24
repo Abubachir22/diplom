@@ -7,6 +7,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'nav.login': 'Войти',
     'nav.signup': 'Регистрация',
     'nav.language': 'EN',
+    'nav.logout': 'Выйти',
 
     // Home
     'home.title': 'Смотри видео вместе с друзьями,',
@@ -108,6 +109,7 @@ export const translations: Record<Language, Record<string, string>> = {
   },
 
   en: {
+    'nav.logout': 'Logout',
     'rooms.planModal.guestError': 'Only registered users can schedule events',
     'room.banned': 'You are banned from this room',
     'rooms.createModal.guestError': 'Guests cannot create rooms. Please register or login.',

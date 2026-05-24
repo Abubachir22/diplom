@@ -31,6 +31,7 @@ const RoomsPage = () => {
   const [showPlan, setShowPlan] = useState(false);
   const [roomName, setRoomName] = useState("");
   const [rooms, setRooms] = useState<RoomItem[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -60,6 +61,14 @@ const RoomsPage = () => {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const fetchEvents = async () => {
+    try {
+      const res = await fetch('http://localhost:5000/api/events');
+      const data = await res.json();
+      if (data.events) setEvents(data.events);
+    } catch {}
+  };
 
   const handleCreate = async () => {
     if (!token) {
@@ -115,7 +124,6 @@ const RoomsPage = () => {
   };
 
   const handlePlanSubmit = async () => {
-    const token = localStorage.getItem('token');
     if (!token) {
       alert(t('rooms.planModal.guestError') || 'Только зарегистрированные пользователи могут планировать события');
       return;
@@ -136,7 +144,7 @@ const RoomsPage = () => {
         setPlanDate("");
         setPlanTime("");
         setPlanUrl("");
-        setTab('planned');
+        fetchEvents();
       } else {
         const data = await res.json();
         alert(data.error || 'Ошибка при создании события');
@@ -151,7 +159,10 @@ const RoomsPage = () => {
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "30px", flexWrap: "wrap", gap: "16px" }}>
         <div style={{ display: "flex", gap: "24px" }}>
           {(["active", "planned"] as const).map((tb) => (
-            <button key={tb} onClick={() => setTab(tb)} style={{ background: "none", border: "none", color: tab === tb ? "#fff" : "var(--text-dim)", fontSize: "1.1rem", cursor: "pointer", paddingBottom: "6px", borderBottom: tab === tb ? "2px solid var(--accent-purple)" : "2px solid transparent" }}>
+            <button key={tb} onClick={() => {
+              setTab(tb);
+              if (tb === 'planned') fetchEvents();
+            }} style={{ background: "none", border: "none", color: tab === tb ? "#fff" : "var(--text-dim)", fontSize: "1.1rem", cursor: "pointer", paddingBottom: "6px", borderBottom: tab === tb ? "2px solid var(--accent-purple)" : "2px solid transparent" }}>
               {tb === "active" ? t('rooms.active') : t('rooms.planned')}
             </button>
           ))}
@@ -164,7 +175,7 @@ const RoomsPage = () => {
 
       {loading ? <p style={{ color: "var(--text-dim)", textAlign: "center", padding: "60px 0" }}>Loading...</p>
       : tab === "active" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "20px", padding: "20px" }}>
           {rooms.length === 0 && <p style={{ color: "var(--text-dim)", gridColumn: "1 / -1", textAlign: "center", padding: "40px" }}>{t('rooms.noRooms')}</p>}
           {rooms.map((room) => (
             <GlassCard key={room.id} style={{ padding: "24px" }}>
@@ -184,7 +195,30 @@ const RoomsPage = () => {
             </GlassCard>
           ))}
         </div>
-      ) : <p style={{ color: "var(--text-dim)", textAlign: "center", padding: "60px" }}>{t('rooms.noPlanned')}</p>}
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "20px", padding: "20px" }}>
+          {events.length === 0 ? (
+            <p style={{ color: "var(--text-dim)", textAlign: "center", padding: "60px", gridColumn: "1 / -1" }}>{t('rooms.noPlanned')}</p>
+          ) : (
+            events.map((event: any) => (
+              <GlassCard key={event.id} style={{ padding: "24px" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--accent-blue)" }}>
+                  📅 {new Date(event.scheduledAt).toLocaleDateString()} {new Date(event.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <h3 style={{ margin: "10px 0" }}>{event.title}</h3>
+                <p style={{ color: "var(--text-dim)", fontSize: "0.9rem", marginBottom: "16px" }}>
+                  {event.creator?.username && `${t('rooms.host')} ${event.creator.username}`}
+                </p>
+                {event.room?.inviteCode && (
+                  <Button variant="outline" onClick={() => navigate("/room/" + event.room.inviteCode)} style={{ width: "100%" }}>
+                    {t('rooms.join')}
+                  </Button>
+                )}
+              </GlassCard>
+            ))
+          )}
+        </div>
+      )}
 
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title={t('rooms.createModal.title')}>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>

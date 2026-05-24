@@ -27,10 +27,11 @@ const RoomPage = () => {
   const guestId = getGuestId();
 
   const currentUser = useRef({
-    id: userStr ? JSON.parse(userStr).id : "guest_" + Math.random().toString(36).slice(2, 8),
-    username: userStr ? JSON.parse(userStr).username : "Guest_" + Math.random().toString(36).slice(2, 6),
+    id: userStr ? JSON.parse(userStr).id : guestId,
+    username: userStr ? JSON.parse(userStr).username : "Guest_" + guestId.slice(-4),
   });
-  const isOwner = useRef(false);
+  
+  const [isOwner, setIsOwner] = useState(false);
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -127,12 +128,19 @@ const RoomPage = () => {
       }),
 
       on("room:users", (data: any) => {
-        const mapped: RoomParticipant[] = data.map((u: any) => ({
-          id: u.userId,
-          role: u.role || "VIEWER",
-          joinedAt: new Date().toISOString(),
-          user: { id: u.userId, username: u.username, email: "" },
-        }));
+        const myId = currentUser.current.id;
+        const mapped: RoomParticipant[] = data.map((u: any) => {
+          // Проверяем, создатель ли мы
+          if (u.userId === myId && u.role === 'OWNER') {
+            setIsOwner(true);
+          }
+          return {
+            id: u.userId,
+            role: u.role || "VIEWER",
+            joinedAt: new Date().toISOString(),
+            user: { id: u.userId, username: u.username, email: "" },
+          };
+        });
         setParticipants(mapped);
       }),
     );
@@ -175,7 +183,7 @@ const RoomPage = () => {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <span style={{ fontSize: "0.85rem", color: "var(--accent-green)", fontWeight: 600 }}>{currentUser.current.username}</span>
-          {isOwner.current && (
+          {isOwner && (
             <button className="btn btn-outline btn-sm" style={{ color: '#EF4444', borderColor: '#EF4444' }} onClick={async () => {
               if (!window.confirm(t('room.deleteConfirm'))) return;
               const token = localStorage.getItem('token');
@@ -192,7 +200,7 @@ const RoomPage = () => {
           <ParticipantList
             participants={participants}
             currentUserId={currentUser.current.id}
-            isOwner={isOwner.current}
+            isOwner={isOwner}
             onBan={handleBan}
           />
         </GlassCard>
